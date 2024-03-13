@@ -6,24 +6,26 @@ from aw_core import dirs
 from aw_core.config import load_config_toml
 from time import sleep
 
-DEFAULT_CONFIG = {"aw-watcher-steam": {"steam_id": "", "api_key": "", "poll_time": 5.0}}
+CONFIG = """
+[aw-watcher-steam]
+steam_id = ""
+api_key = ""
+poll_time = 5.0"""
 
 
 def load_config():
-    return load_config_toml("aw-watcher-steam", DEFAULT_CONFIG)
+    return load_config_toml("aw-watcher-steam", CONFIG)
 
 
-def fetch_player_summaries(api_key, steam_id):
+def fetch_and_process_player_summaries(api_key, steam_id, logger):
     url = "http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/"
     params = {"key": api_key, "steamids": steam_id}
-    return requests.get(url=url, params=params)
-
-
-def process_player_summaries(response):
+    response = requests.get(url=url, params=params)
     if response.status_code != 200:
-        raise requests.HTTPError(
+        logger.error(
             f"Steam API request error, status code: {response.status_code}, response: {response.text}"
         )
+        return None
     response_data = response.json()["response"]["players"][0]
     if "gameextrainfo" not in response_data:
         return None
@@ -41,44 +43,39 @@ def setup_client():
     return client, bucket_name
 
 
-def send_event(client, bucket_name, event, pulsetime):
-    client.heartbeat(bucket_name, event=event, pulsetime=pulsetime, queued=True)
-
-
-def is_valid_config(config):
-    try:
-        return all(config[key] for key in ["api_key", "steam_id"])
-    except KeyError:
-        return False
-
-
 def watch_games(client, bucket_name, api_key, steam_id, pulsetime, logger):
-    response = fetch_player_summaries(api_key=api_key, steam_id=steam_id)
-    game_data = process_player_summaries(response)
+    game_data = fetch_and_process_player_summaries(
+        api_key=api_key, steam_id=steam_id, logger=logger
+    )
     if game_data:
         event = Event(data=game_data)
-        send_event(client, bucket_name, event, pulsetime)
+        client.heartbeat(bucket_name, event=event, pulsetime=pulsetime, queued=True)
         logger.info(f"Currently playing {game_data['currently-playing-game']}")
 
 
-def main():
+def setup_logging():
     logger = logging.getLogger("aw-watcher-steam")
+    return logger
+
+
+def main():
+    logger = setup_logging()
     config_dir = dirs.get_config_dir("aw-watcher-steam")
-    config = load_config()
-    poll_time = float(config["aw-watcher-steam"].get("poll_time", 5.0)) + 1
-    if not is_valid_config(config["aw-watcher-steam"]):
+    config = load_config()["aw-watcher-steam"]
+    poll_time = float(config.get("poll_time", 5.0)) + 1
+    if not (config.get("api_key") and config.get("steam_id")):
         logger.error(
             f"steam_id or api_key not specified in config file (in folder {config_dir}), get your api here: https://steamcommunity.com/dev/apikey"
         )
         return
-    api_key = config["aw-watcher-steam"]["api_key"]
-    steam_id = config["aw-watcher-steam"]["steam_id"]
+    api_key = config["api_key"]
+    steam_id = config["steam_id"]
     client, bucket_name = setup_client()
 
     while True:
         try:
             watch_games(client, bucket_name, api_key, steam_id, poll_time, logger)
-        except (requests.HTTPError, requests.RequestException, ValueError) as e:
+        except (requests.RequestException, ValueError) as e:
             logger.error(f"Error: {e}")
         sleep(poll_time - 1)
 
