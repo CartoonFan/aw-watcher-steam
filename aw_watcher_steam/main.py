@@ -36,7 +36,7 @@ def is_valid_config(config, config_dir) -> None:
     api_key = config["aw-watcher-steam"].get("api_key", "")
     steam_id = config["aw-watcher-steam"].get("steam_id", "")
     poll_time = config["aw-watcher-steam"].get("poll_time", 5.0)
-    if not api_key or not steam_id or not isinstance(poll_time, float):
+    if not api_key or not steam_id or not isinstance(poll_time, (float, int)):
         raise ValueError(
             f"steam_id, api_key not specified or invalid poll_time in config file (in folder {config_dir}), get your api here: https://steamcommunity.com/dev/apikey"
         )
@@ -44,29 +44,19 @@ def is_valid_config(config, config_dir) -> None:
 
 
 def send_event(client, bucket_name, game_data, poll_time):
-    event = Event(timestamp=datetime.now(timezone.utc), data=game_data)
+    event = Event(data=game_data)
     client.heartbeat(bucket_name, event=event, pulsetime=poll_time + 1, queued=True)
-
-
-def poll_games(client, bucket_name, api_key, steam_id, poll_time) -> dict:
-    game_data = get_currently_played_games(api_key=api_key, steam_id=steam_id)
-    send_event(client, bucket_name, game_data, poll_time)
-    return game_data
 
 
 def run_polling_loop(client, bucket_name, api_key, steam_id, poll_time):
     while True:
         try:
-            game_data = poll_games(client, bucket_name, api_key, steam_id, poll_time)
-            status_message = (
-                f"Currently playing {game_data['currently-playing-game']}"
-                if game_data
-                else "Currently not playing any game"
-            )
+            game_data = get_currently_played_games(api_key=api_key, steam_id=steam_id)
+            send_event(client, bucket_name, game_data, poll_time)
+            status_message = f"Currently playing {game_data['currently-playing-game']}" if game_data else "Currently not playing any game"
             print(status_message)
         except Exception as e:
-            logger.error(f"Error occurred: {e}")
-            logger.error(traceback.format_exc())
+            logger.error(f"An error occurred: {e}")
         sleep(poll_time)
 
 
