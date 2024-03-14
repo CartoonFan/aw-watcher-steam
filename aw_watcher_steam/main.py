@@ -46,21 +46,19 @@ def validate_config(config, config_dir) -> None:
         raise ValueError(
             f"{', '.join(missing_keys)} not specified in config file (in folder {config_dir}), get your api here: https://steamcommunity.com/dev/apikey"
         )
-    try:
-        steam_config["poll_time"] = float(steam_config["poll_time"])
-    except ValueError:
-        raise ValueError("Invalid poll_time value in config file")
+    steam_config["poll_time"] = float(steam_config.get("poll_time", 0))
     if steam_config["poll_time"] <= 0:
         raise ValueError("poll_time must be greater than 0")
 
 
 def run_polling_loop(client, bucket_name, api_key, steam_id, poll_time):
+    timestamp = datetime.now(timezone.utc)  # Set timestamp once to prevent console spam
     while True:
         game_data = get_currently_played_games(api_key=api_key, steam_id=steam_id)
         if game_data:
             client.heartbeat(
                 bucket_name,
-                event=Event(timestamp=datetime.now(timezone.utc), data=game_data), #timestamp=datetime.now(timezone.utc) to prevent log spam
+                event=Event(timestamp=timestamp, data=game_data),
                 pulsetime=poll_time + 1,
                 queued=True,
             )
