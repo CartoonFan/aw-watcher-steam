@@ -37,23 +37,20 @@ def get_currently_played_games(api_key, steam_id) -> dict:
     return {k: response_data.get(k, "") for k in ["gameextrainfo", "gameid"]}
 
 
-def validate_poll_time(poll_time_str):
-    poll_time = float(poll_time_str)
-    if poll_time <= 0:
-        raise ValueError("Invalid poll_time value in config file")
-    return poll_time
-
-
 def validate_config(config, config_dir) -> None:
     steam_config = config["aw-watcher-steam"]
-    required_keys = ["poll_time", "api_key", "steam_id"]
-    if missing_keys := ", ".join(
-        key for key in required_keys if not steam_config.get(key)
-    ):
+    required_keys = {"poll_time", "api_key", "steam_id"}
+    missing_keys = required_keys - steam_config.keys()
+    if missing_keys:
         raise ValueError(
-            f"{missing_keys} not specified in config file (in folder {config_dir}), get your api here: https://steamcommunity.com/dev/apikey"
+            f"{', '.join(missing_keys)} not specified in config file (in folder {config_dir}), get your api here: https://steamcommunity.com/dev/apikey"
         )
-    steam_config["poll_time"] = validate_poll_time(steam_config["poll_time"])
+    try:
+        steam_config["poll_time"] = float(steam_config["poll_time"])
+    except ValueError:
+        raise ValueError("Invalid poll_time value in config file")
+    if steam_config["poll_time"] <= 0:
+        raise ValueError("poll_time must be greater than 0")
 
 
 def run_polling_loop(client, bucket_name, api_key, steam_id, poll_time):
@@ -66,11 +63,10 @@ def run_polling_loop(client, bucket_name, api_key, steam_id, poll_time):
                 pulsetime=poll_time + 1,
                 queued=True,
             )
-        game_info = game_data.get("gameextrainfo", "no")
-        status_message = (
-            f"Currently {'playing ' if game_info != 'no' else ''}{game_info} game"
+        game_info = game_data.get("gameextrainfo", "no game")
+        logger.info(
+            f"Currently {'playing ' if game_info != 'no game' else ''}{game_info}"
         )
-        logger.info(status_message)
         sleep(poll_time)
 
 
@@ -81,8 +77,10 @@ def setup_and_run(config):
         client.create_bucket(bucket_name, event_type="currently-playing-game")
         try:
             run_polling_loop(client, bucket_name, **steam_config)
-        except Exception:
-            logger.exception("An error occurred")
+        except requests.exceptions.RequestException as e:
+            logger.exception("An error occurred during a request")
+        except ValueError as e:
+            logger.exception("A ValueError occurred")
 
 
 def main():
