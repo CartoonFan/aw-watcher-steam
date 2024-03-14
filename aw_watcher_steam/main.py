@@ -1,22 +1,21 @@
 from datetime import datetime, timezone
 import logging
+import sys
 from time import sleep
+import traceback
 
 from aw_client import ActivityWatchClient
+from aw_core import dirs
 from aw_core.config import load_config_toml
+from aw_core.models import Event
 import requests
+
 
 CONFIG = """
 [aw-watcher-steam]
 steam_id = ""
 api_key = ""
 poll_time = 5.0"""
-
-CONFIG_DICT = load_config_toml("aw-watcher-steam", CONFIG)["aw-watcher-steam"]
-
-
-class ConfigurationError(Exception):
-    pass
 
 
 def get_currently_played_games(api_key, steam_id) -> dict:
@@ -32,55 +31,45 @@ def get_currently_played_games(api_key, steam_id) -> dict:
     }
 
 
-def validate_configuration(config):
-    if not {"api_key", "steam_id"}.issubset(config):
-        missing_keys = {"api_key", "steam_id"} - config.keys()
-        raise ConfigurationError(
-            f"{', '.join(missing_keys)} not specified in config file, get your api here: https://steamcommunity.com/dev/apikey"
+def validate_config(config, config_dir):
+    api_key = config["aw-watcher-steam"].get("api_key", "")
+    steam_id = config["aw-watcher-steam"].get("steam_id", "")
+    if not api_key or not steam_id:
+        logger = logging.getLogger("aw-watcher-steam")
+        logger.warning(
+            f"steam_id or api_key not specified in config file (in folder {config_dir}), get your api here: https://steamcommunity.com/dev/apikey"
         )
-
-
-def initialize_client():
-    client = ActivityWatchClient("aw-watcher-steam", testing=False)
-    bucket_name = f"aw-watcher-steam_{client.client_hostname}"
-    client.create_bucket(bucket_name, event_type="currently-playing-game")
-    client.connect()
-    return client, bucket_name
-
-
-def run_main_loop(client, bucket_name, config):
-    logger = logging.getLogger("aw-watcher-steam")
-    try:
-        while True:
-            game_data = get_currently_played_games(
-                config["api_key"], config["steam_id"]
-            )
-            client.heartbeat(
-                bucket_name,
-                event=game_data,
-                pulsetime=config["poll_time"] + 1,
-                queued=True,
-            )
-            if game_data:
-                logger.info(f"Currently playing {game_data['currently-playing-game']}")
-            sleep(config["poll_time"])
-    except Exception:
-        logger.exception("Error occurred")
-
-
-def setup_logging():
-    logging.basicConfig(level=logging.INFO)
+        sys.exit(1)
 
 
 def main():
-    setup_logging()
-    try:
-        validate_configuration(CONFIG_DICT)
-    except ConfigurationError as e:
-        logging.error(f"Configuration error: {e}")
-    else:
-        client, bucket_name = initialize_client()
-        run_main_loop(client, bucket_name, CONFIG_DICT)
+    config_dir = dirs.get_config_dir("aw-watcher-steam")
+    config = load_config_toml("aw-watcher-steam", CONFIG)
+    validate_config(config, config_dir)
+    poll_time = float(config["aw-watcher-steam"].get("poll_time"))
+    api_key = config["aw-watcher-steam"]["api_key"]
+    steam_id = config["aw-watcher-steam"]["steam_id"]
+    client = ActivityWatchClient("aw-watcher-steam", testing=False)
+    bucket_name = f"{client.client_name}_{client.client_hostname}"
+    client.create_bucket(bucket_name, event_type="currently-playing-game")
+    client.connect()
+    while True:
+        try:
+            if game_data := get_currently_played_games(
+                api_key=api_key, steam_id=steam_id
+            ):
+                now = datetime.now(timezone.utc)
+                event = Event(timestamp=now, data=game_data)
+                client.heartbeat(
+                    bucket_name, event=event, pulsetime=poll_time + 1, queued=True
+                )
+                print(f"Currently playing {game_data['currently-playing-game']}")
+            else:
+                print("Currently not playing any game")
+        except Exception as e:
+            logging.error(f"Error occurred: {e}")
+            logging.error(traceback.format_exc())
+        sleep(poll_time)
 
 
 if __name__ == "__main__":
