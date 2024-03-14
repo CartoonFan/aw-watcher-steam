@@ -32,15 +32,15 @@ def get_currently_played_games(api_key, steam_id) -> dict:
     }
 
 
-def is_valid_config(config, config_dir) -> bool:
+def is_valid_config(config, config_dir) -> None:
     api_key = config["aw-watcher-steam"].get("api_key", "")
     steam_id = config["aw-watcher-steam"].get("steam_id", "")
-    if not api_key or not steam_id:
-        logger.error(
-            f"steam_id or api_key not specified in config file (in folder {config_dir}), get your api here: https://steamcommunity.com/dev/apikey"
+    poll_time = config["aw-watcher-steam"].get("poll_time", 5.0)
+    if not api_key or not steam_id or not isinstance(poll_time, float):
+        raise ValueError(
+            f"steam_id, api_key not specified or invalid poll_time in config file (in folder {config_dir}), get your api here: https://steamcommunity.com/dev/apikey"
         )
-        return False
-    return True
+    config["aw-watcher-steam"]["poll_time"] = float(poll_time)
 
 
 def send_event(client, bucket_name, game_data, poll_time):
@@ -48,21 +48,20 @@ def send_event(client, bucket_name, game_data, poll_time):
     client.heartbeat(bucket_name, event=event, pulsetime=poll_time + 1, queued=True)
 
 
-def poll_games(client, bucket_name, api_key, steam_id, poll_time) -> str:
+def poll_games(client, bucket_name, api_key, steam_id, poll_time) -> dict:
     game_data = get_currently_played_games(api_key=api_key, steam_id=steam_id)
     send_event(client, bucket_name, game_data, poll_time)
-    return (
-        f"Currently playing {game_data['currently-playing-game']}"
-        if game_data
-        else "Currently not playing any game"
-    )
+    return game_data
 
 
 def run_polling_loop(client, bucket_name, api_key, steam_id, poll_time):
     while True:
         try:
-            status_message = poll_games(
-                client, bucket_name, api_key, steam_id, poll_time
+            game_data = poll_games(client, bucket_name, api_key, steam_id, poll_time)
+            status_message = (
+                f"Currently playing {game_data['currently-playing-game']}"
+                if game_data
+                else "Currently not playing any game"
             )
             print(status_message)
         except Exception as e:
@@ -72,7 +71,7 @@ def run_polling_loop(client, bucket_name, api_key, steam_id, poll_time):
 
 
 def setup_and_run(config):
-    poll_time = float(config["aw-watcher-steam"].get("poll_time"))
+    poll_time = config["aw-watcher-steam"]["poll_time"]
     api_key = config["aw-watcher-steam"]["api_key"]
     steam_id = config["aw-watcher-steam"]["steam_id"]
     client = ActivityWatchClient("aw-watcher-steam", testing=False)
@@ -85,7 +84,10 @@ def setup_and_run(config):
 def main():
     config_dir = dirs.get_config_dir("aw-watcher-steam")
     config = load_config_toml("aw-watcher-steam", CONFIG)
-    if not is_valid_config(config, config_dir):
+    try:
+        is_valid_config(config, config_dir)
+    except ValueError as e:
+        logger.error(e)
         sys.exit(1)
     setup_and_run(config)
 
