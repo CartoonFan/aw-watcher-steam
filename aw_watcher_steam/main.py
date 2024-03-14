@@ -36,7 +36,7 @@ def is_valid_config(config, config_dir) -> bool:
     api_key = config["aw-watcher-steam"].get("api_key", "")
     steam_id = config["aw-watcher-steam"].get("steam_id", "")
     if not api_key or not steam_id:
-        logger.warning(
+        logger.error(
             f"steam_id or api_key not specified in config file (in folder {config_dir}), get your api here: https://steamcommunity.com/dev/apikey"
         )
         return False
@@ -44,8 +44,7 @@ def is_valid_config(config, config_dir) -> bool:
 
 
 def send_event(client, bucket_name, game_data, poll_time):
-    now = datetime.now(timezone.utc)
-    event = Event(timestamp=now, data=game_data)
+    event = Event(timestamp=datetime.now(timezone.utc), data=game_data)
     client.heartbeat(bucket_name, event=event, pulsetime=poll_time + 1, queued=True)
 
 
