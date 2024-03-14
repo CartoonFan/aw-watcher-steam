@@ -33,31 +33,50 @@ def get_currently_played_games(api_key, steam_id) -> dict:
 
 
 def is_valid_config(config, config_dir) -> None:
-    api_key = config["aw-watcher-steam"].get("api_key", "")
-    steam_id = config["aw-watcher-steam"].get("steam_id", "")
-    poll_time = config["aw-watcher-steam"].get("poll_time", 5.0)
-    if not api_key or not steam_id or not isinstance(poll_time, (float, int)):
+    steam_config = config["aw-watcher-steam"]
+    poll_time = steam_config.get("poll_time")
+    api_key = steam_config.get("api_key")
+    steam_id = steam_config.get("steam_id")
+
+    if not poll_time or not api_key or not steam_id:
         raise ValueError(
             f"steam_id, api_key not specified or invalid poll_time in config file (in folder {config_dir}), get your api here: https://steamcommunity.com/dev/apikey"
         )
-    config["aw-watcher-steam"]["poll_time"] = float(poll_time)
+
+    try:
+        poll_time = float(poll_time)
+        if poll_time <= 0:
+            raise ValueError
+    except ValueError:
+        raise ValueError(
+            f"Invalid poll_time value in config file (in folder {config_dir})"
+        )
 
 
-def send_event(client, bucket_name, game_data, poll_time):
-    event = Event(data=game_data)
-    client.heartbeat(bucket_name, event=event, pulsetime=poll_time + 1, queued=True)
+def send_event(client, bucket_name, game_data):
+    if game_data:
+        client.heartbeat(
+            bucket_name,
+            event=Event(data=game_data),
+            pulsetime=game_data["poll_time"] + 1,
+            queued=True,
+        )
 
 
 def run_polling_loop(client, bucket_name, api_key, steam_id, poll_time):
-    while True:
-        try:
+    try:
+        while True:
             game_data = get_currently_played_games(api_key=api_key, steam_id=steam_id)
-            send_event(client, bucket_name, game_data, poll_time)
-            status_message = f"Currently playing {game_data['currently-playing-game']}" if game_data else "Currently not playing any game"
-            print(status_message)
-        except Exception as e:
-            logger.error(f"An error occurred: {e}")
-        sleep(poll_time)
+            send_event(client, bucket_name, game_data)
+            status_message = (
+                f"Currently playing {game_data['currently-playing-game']}"
+                if game_data
+                else "Currently not playing any game"
+            )
+            logger.info(status_message)
+            sleep(poll_time)
+    except Exception as e:
+        logger.exception("An error occurred")
 
 
 def setup_and_run(config):
