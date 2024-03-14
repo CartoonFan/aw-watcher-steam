@@ -34,31 +34,22 @@ def get_currently_played_games(api_key, steam_id) -> dict:
 
 def is_valid_config(config, config_dir) -> None:
     steam_config = config["aw-watcher-steam"]
-    poll_time = steam_config.get("poll_time")
-    api_key = steam_config.get("api_key")
-    steam_id = steam_config.get("steam_id")
-
-    if not poll_time or not api_key or not steam_id:
+    if (
+        not steam_config.get("poll_time")
+        or not steam_config.get("api_key")
+        or not steam_config.get("steam_id")
+    ):
         raise ValueError(
             f"steam_id, api_key not specified or invalid poll_time in config file (in folder {config_dir}), get your api here: https://steamcommunity.com/dev/apikey"
         )
 
-    try:
-        poll_time = float(poll_time)
-        if poll_time <= 0:
-            raise ValueError
-    except ValueError:
-        raise ValueError(
-            f"Invalid poll_time value in config file (in folder {config_dir})"
-        )
 
-
-def send_event(client, bucket_name, game_data):
+def send_event(client, bucket_name, game_data, poll_time):
     if game_data:
         client.heartbeat(
             bucket_name,
             event=Event(data=game_data),
-            pulsetime=game_data["poll_time"] + 1,
+            pulsetime=poll_time + 1,
             queued=True,
         )
 
@@ -67,7 +58,7 @@ def run_polling_loop(client, bucket_name, api_key, steam_id, poll_time):
     try:
         while True:
             game_data = get_currently_played_games(api_key=api_key, steam_id=steam_id)
-            send_event(client, bucket_name, game_data)
+            send_event(client, bucket_name, game_data, poll_time)
             status_message = (
                 f"Currently playing {game_data['currently-playing-game']}"
                 if game_data
@@ -80,9 +71,12 @@ def run_polling_loop(client, bucket_name, api_key, steam_id, poll_time):
 
 
 def setup_and_run(config):
-    poll_time = config["aw-watcher-steam"]["poll_time"]
-    api_key = config["aw-watcher-steam"]["api_key"]
-    steam_id = config["aw-watcher-steam"]["steam_id"]
+    steam_config = config["aw-watcher-steam"]
+    poll_time = float(steam_config["poll_time"])
+    if poll_time <= 0:
+        raise ValueError(f"Invalid poll_time value in config file")
+    api_key = steam_config["api_key"]
+    steam_id = steam_config["steam_id"]
     client = ActivityWatchClient("aw-watcher-steam", testing=False)
     bucket_name = f"{client.client_name}_{client.client_hostname}"
     client.create_bucket(bucket_name, event_type="currently-playing-game")
