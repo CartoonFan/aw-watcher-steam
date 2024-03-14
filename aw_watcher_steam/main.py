@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import logging
 import sys
 from time import sleep
@@ -59,7 +60,7 @@ def run_polling_loop(client, bucket_name, api_key, steam_id, poll_time):
         if game_data:
             client.heartbeat(
                 bucket_name,
-                event=Event(data=game_data),
+                event=Event(timestamp=datetime.now(timezone.utc), data=game_data), #timestamp=datetime.now(timezone.utc) to prevent log spam
                 pulsetime=poll_time + 1,
                 queued=True,
             )
