@@ -34,11 +34,7 @@ def get_currently_played_games(api_key, steam_id) -> dict:
     response = requests.get(url=url)
     response.raise_for_status()
     response_data = response.json()["response"]["players"][0]
-    return (
-        {k: response_data.get(k, "") for k in ["gameextrainfo", "gameid"]}
-        if "gameextrainfo" in response_data
-        else {}
-    )
+    return {k: response_data.get(k, "") for k in ["gameextrainfo", "gameid"]}
 
 
 def validate_poll_time(poll_time_str):
@@ -70,7 +66,10 @@ def run_polling_loop(client, bucket_name, api_key, steam_id, poll_time):
                 pulsetime=poll_time + 1,
                 queued=True,
             )
-        status_message = f"Currently {'playing ' + game_data['currently-playing-game'] if game_data else 'not playing any'} game"
+        game_info = game_data.get("gameextrainfo", "no")
+        status_message = (
+            f"Currently {'playing ' if game_info != 'no' else ''}{game_info} game"
+        )
         logger.info(status_message)
         sleep(poll_time)
 
