@@ -34,12 +34,11 @@ def get_currently_played_games(api_key, steam_id) -> dict:
     response = requests.get(url=url)
     response.raise_for_status()
     response_data = response.json()["response"]["players"][0]
-    if "gameextrainfo" not in response_data:
-        return {}
-    return {
-        "currently-playing-game": response_data["gameextrainfo"],
-        "game-id": response_data["gameid"],
-    }
+    return (
+        {k: response_data.get(k, "") for k in ["gameextrainfo", "gameid"]}
+        if "gameextrainfo" in response_data
+        else {}
+    )
 
 
 def validate_poll_time(poll_time_str):
@@ -52,10 +51,11 @@ def validate_poll_time(poll_time_str):
 def validate_config(config, config_dir) -> None:
     steam_config = config["aw-watcher-steam"]
     required_keys = ["poll_time", "api_key", "steam_id"]
-    if not all(steam_config.get(key) for key in required_keys):
-        missing_keys = [key for key in required_keys if not steam_config.get(key)]
+    if missing_keys := ", ".join(
+        key for key in required_keys if not steam_config.get(key)
+    ):
         raise ValueError(
-            f"{', '.join(missing_keys)} not specified in config file (in folder {config_dir}), get your api here: https://steamcommunity.com/dev/apikey"
+            f"{missing_keys} not specified in config file (in folder {config_dir}), get your api here: https://steamcommunity.com/dev/apikey"
         )
     steam_config["poll_time"] = validate_poll_time(steam_config["poll_time"])
 
