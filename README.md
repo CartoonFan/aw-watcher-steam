@@ -12,7 +12,9 @@ In order for this to watcher work you need to either set your game details setti
 <a href = "https://steamcommunity.com/dev/apikey">Register Steam API key.</a> 
 
 
-Enter localhost as domain name 
+Enter localhost as domain name
+
+:warning: If you're using Steam Guard Mobile authenticator you will need to choose the menu and then "Confirmations". You will not receive a regular approval notification.
 
 ### Step 1: Find Steam ID
 Find your 17 digits steam ID <a href = "https://help.steampowered.com/en/faqs/view/2816-BE67-5B69-0FEC">here</a>. 
