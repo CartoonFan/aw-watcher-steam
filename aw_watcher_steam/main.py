@@ -31,7 +31,7 @@ def get_currently_played_games(api_key, steam_id) -> dict:
             data["currently-playing-game"] = response_data["gameextrainfo"]
             data["game-id"] = response_data["gameid"]
         return data
-    raise Exception("Steam API request error, error code:" + response.status_code + " " + response.text)
+    raise Exception("Steam API request error, error code:" + str(response.status_code) + " " + response.text)
 
 def main(): 
     logger = logging.getLogger("aw-watcher-steam")
